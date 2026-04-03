@@ -1,5 +1,5 @@
 import React from 'react';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subMonths, addMonths, getUnixTime, startOfDay, setYear, setMonth, getYear, getMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subMonths, addMonths, getUnixTime, startOfDay, setYear, setMonth, getYear, getMonth, addYears, subYears } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus, Loader2, Calendar, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -9,19 +9,28 @@ import { cn, formatNumber, getKSTDate } from './lib/utils';
 
 export default function App() {
   const [currentDate, setCurrentDate] = React.useState(getKSTDate());
+  const [viewMode, setViewMode] = React.useState<'month' | 'year'>('month');
   const [kospiData, setKospiData] = React.useState<KOSPIData[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [showYearPicker, setShowYearPicker] = React.useState(false);
   const [showMonthPicker, setShowMonthPicker] = React.useState(false);
 
-  const fetchMonthData = React.useCallback(async (date: Date) => {
+  const fetchData = React.useCallback(async (date: Date, mode: 'month' | 'year') => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch a bit more to get the previous close for the first day of the month
-      const start = getUnixTime(startOfMonth(subMonths(date, 1)));
-      const end = getUnixTime(endOfMonth(date));
+      let start, end;
+      if (mode === 'month') {
+        // Fetch a bit more to get the previous close for the first day of the month
+        start = getUnixTime(startOfMonth(subMonths(date, 1)));
+        end = getUnixTime(endOfMonth(date));
+      } else {
+        // Fetch the entire year plus the last month of the previous year for the first day's close
+        const yearStart = setMonth(setYear(date, getYear(date)), 0);
+        start = getUnixTime(startOfMonth(subMonths(yearStart, 1)));
+        end = getUnixTime(endOfMonth(setMonth(setYear(date, getYear(date)), 11)));
+      }
       
       const response = await axios.get<KOSPIData[]>(`/api/kospi?start=${start}&end=${end}`);
       setKospiData(response.data);
@@ -34,11 +43,24 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
-    fetchMonthData(currentDate);
-  }, [currentDate, fetchMonthData]);
+    fetchData(currentDate, viewMode);
+  }, [currentDate, viewMode, fetchData]);
 
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const handleNext = () => {
+    if (viewMode === 'month') {
+      setCurrentDate(addMonths(currentDate, 1));
+    } else {
+      setCurrentDate(addYears(currentDate, 1));
+    }
+  };
+
+  const handlePrev = () => {
+    if (viewMode === 'month') {
+      setCurrentDate(subMonths(currentDate, 1));
+    } else {
+      setCurrentDate(subYears(currentDate, 1));
+    }
+  };
   const goToToday = () => {
     setCurrentDate(getKSTDate());
     setShowYearPicker(false);
@@ -99,12 +121,17 @@ export default function App() {
 
   const daysOfWeek = ['일', '월', '화', '수', '목', '금', '토'];
 
-  const currentMonthData = React.useMemo(() => {
-    return kospiData.filter(d => isSameMonth(new Date(d.date), currentDate));
-  }, [kospiData, currentDate]);
+  const currentViewData = React.useMemo(() => {
+    if (viewMode === 'month') {
+      return kospiData.filter(d => isSameMonth(new Date(d.date), currentDate));
+    } else {
+      const year = getYear(currentDate);
+      return kospiData.filter(d => getYear(new Date(d.date)) === year);
+    }
+  }, [kospiData, currentDate, viewMode]);
 
   const stats = React.useMemo(() => {
-    if (currentMonthData.length === 0) return null;
+    if (currentViewData.length === 0) return null;
 
     let upDays = 0;
     let downDays = 0;
@@ -112,14 +139,12 @@ export default function App() {
     let totalAbsPercentChange = 0;
     let validTradingDaysCount = 0;
 
-    currentMonthData.forEach(d => {
-      // Skip invalid data points where close is zero or missing
+    currentViewData.forEach(d => {
       if (!d.close || d.close <= 0) return;
 
       const dataIndex = kospiData.findIndex(kd => kd.date === d.date);
       if (dataIndex > 0) {
         const prevClose = kospiData[dataIndex - 1].close;
-        // Skip if previous close is zero or missing to avoid division by zero
         if (!prevClose || prevClose <= 0) return;
 
         const diff = d.close - prevClose;
@@ -134,38 +159,288 @@ export default function App() {
       }
     });
 
-    // Find first and last valid trading days of the month
-    const validMonthData = currentMonthData.filter(d => d.close && d.close > 0);
-    if (validMonthData.length === 0) return null;
+    const validData = currentViewData.filter(d => d.close && d.close > 0);
+    if (validData.length === 0) return null;
 
-    const firstDay = validMonthData[0];
-    const lastDay = validMonthData[validMonthData.length - 1];
+    const firstDay = validData[0];
+    const lastDay = validData[validData.length - 1];
     
     const firstDayIndex = kospiData.findIndex(kd => kd.date === firstDay.date);
-    // Use previous day's close if available, otherwise use open price of the first day
     const firstPrevClose = firstDayIndex > 0 ? kospiData[firstDayIndex - 1].close : firstDay.open;
 
-    let monthlyChange = 0;
-    let monthlyChangePercent = 0;
+    let totalChange = 0;
+    let totalChangePercent = 0;
     
     if (firstPrevClose && firstPrevClose > 0) {
-      monthlyChange = lastDay.close - firstPrevClose;
-      monthlyChangePercent = (monthlyChange / firstPrevClose) * 100;
+      totalChange = lastDay.close - firstPrevClose;
+      totalChangePercent = (totalChange / firstPrevClose) * 100;
     }
 
     const avgDailyChange = validTradingDaysCount > 0 ? totalAbsChange / validTradingDaysCount : 0;
     const avgDailyPercentChange = validTradingDaysCount > 0 ? totalAbsPercentChange / validTradingDaysCount : 0;
 
     return {
-      totalTradingDays: validMonthData.length,
+      totalTradingDays: validData.length,
       upDays,
       downDays,
-      monthlyChange,
-      monthlyChangePercent,
+      totalChange,
+      totalChangePercent,
       avgDailyChange,
       avgDailyPercentChange
     };
-  }, [currentMonthData, kospiData]);
+  }, [currentViewData, kospiData]);
+
+  const MonthCalendar = ({ date, compact = false }: { date: Date, compact?: boolean }) => {
+    const monthStart = startOfMonth(date);
+    const monthEnd = endOfMonth(monthStart);
+    const startDate = startOfWeek(monthStart);
+    const endDate = endOfWeek(monthEnd);
+
+    const calendarDays = eachDayOfInterval({
+      start: startDate,
+      end: endDate,
+    });
+
+    const monthData = React.useMemo(() => {
+      return kospiData.filter(d => isSameMonth(new Date(d.date), date));
+    }, [date]);
+
+    const monthStats = React.useMemo(() => {
+      if (monthData.length === 0) return null;
+
+      let upDays = 0;
+      let downDays = 0;
+      let totalAbsChange = 0;
+      let totalAbsPercentChange = 0;
+      let validTradingDaysCount = 0;
+
+      monthData.forEach(d => {
+        if (!d.close || d.close <= 0) return;
+
+        const dataIndex = kospiData.findIndex(kd => kd.date === d.date);
+        if (dataIndex > 0) {
+          const prevClose = kospiData[dataIndex - 1].close;
+          if (!prevClose || prevClose <= 0) return;
+
+          const diff = d.close - prevClose;
+          const diffPercent = (diff / prevClose) * 100;
+          
+          if (diff > 0) upDays++;
+          else if (diff < 0) downDays++;
+          
+          totalAbsChange += Math.abs(diff);
+          totalAbsPercentChange += Math.abs(diffPercent);
+          validTradingDaysCount++;
+        }
+      });
+
+      const validData = monthData.filter(d => d.close && d.close > 0);
+      if (validData.length === 0) return null;
+
+      const firstDay = validData[0];
+      const lastDay = validData[validData.length - 1];
+      
+      const firstDayIndex = kospiData.findIndex(kd => kd.date === firstDay.date);
+      const firstPrevClose = firstDayIndex > 0 ? kospiData[firstDayIndex - 1].close : firstDay.open;
+
+      let totalChange = 0;
+      let totalChangePercent = 0;
+      
+      if (firstPrevClose && firstPrevClose > 0) {
+        totalChange = lastDay.close - firstPrevClose;
+        totalChangePercent = (totalChange / firstPrevClose) * 100;
+      }
+
+      const avgDailyChange = validTradingDaysCount > 0 ? totalAbsChange / validTradingDaysCount : 0;
+      const avgDailyPercentChange = validTradingDaysCount > 0 ? totalAbsPercentChange / validTradingDaysCount : 0;
+
+      return {
+        totalTradingDays: validData.length,
+        upDays,
+        downDays,
+        totalChange,
+        totalChangePercent,
+        avgDailyChange,
+        avgDailyPercentChange
+      };
+    }, [monthData]);
+
+    const getDayData = (d: Date): DayData => {
+      const dayStart = startOfDay(d).getTime();
+      const data = kospiData.find(kd => startOfDay(new Date(kd.date)).getTime() === dayStart);
+      
+      let prevClose: number | undefined;
+      if (data) {
+        const dataIndex = kospiData.findIndex(kd => kd.date === data.date);
+        if (dataIndex > 0) {
+          prevClose = kospiData[dataIndex - 1].close;
+        }
+      }
+
+      return {
+        date: d,
+        isCurrentMonth: isSameMonth(d, monthStart),
+        kospi: data,
+        prevClose
+      };
+    };
+
+    return (
+      <div className={cn("bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden relative", compact && "shadow-md")}>
+        {compact && (
+          <div className="bg-slate-50 border-b border-slate-100">
+            <div className="py-2 px-4 text-center font-bold text-slate-700 border-b border-slate-100">
+              {format(date, 'M월')}
+            </div>
+            {monthStats && (
+              <div className="grid grid-cols-3 gap-px bg-slate-100 text-[8px]">
+                <div className="bg-white p-1 text-center">
+                  <div className="text-slate-400">영업/상승/하락</div>
+                  <div className="font-bold">{monthStats.totalTradingDays} / <span className="text-red-500">{monthStats.upDays}</span> / <span className="text-blue-500">{monthStats.downDays}</span></div>
+                </div>
+                <div className="bg-white p-1 text-center">
+                  <div className="text-slate-400">변동폭/수익률</div>
+                  <div className={cn("font-bold", monthStats.totalChange > 0 ? "text-red-500" : monthStats.totalChange < 0 ? "text-blue-500" : "")}>
+                    {formatNumber(monthStats.totalChange)} ({formatNumber(monthStats.totalChangePercent)}%)
+                  </div>
+                </div>
+                <div className="bg-white p-1 text-center">
+                  <div className="text-slate-400">일평균 변동(p/%)</div>
+                  <div className="font-bold">{formatNumber(monthStats.avgDailyChange)} / {formatNumber(monthStats.avgDailyPercentChange)}%</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        
+        <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
+          {daysOfWeek.map((day, idx) => (
+            <div 
+              key={day} 
+              className={cn(
+                "text-center font-bold uppercase tracking-wider",
+                compact ? "py-1 text-[10px]" : "py-3 text-sm",
+                idx === 0 ? "text-red-500" : idx === 6 ? "text-blue-500" : "text-slate-500"
+              )}
+            >
+              {day}
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 auto-rows-fr">
+          <AnimatePresence mode="wait">
+            {calendarDays.map((d, index) => {
+              const dayData = getDayData(d);
+              const isToday = isSameDay(d, getKSTDate());
+              
+              // Only consider data valid if close is greater than 0
+              const hasValidData = dayData.kospi && dayData.kospi.close > 0;
+              const diff = hasValidData && dayData.prevClose ? dayData.kospi!.close - dayData.prevClose : 0;
+              const diffPercent = dayData.prevClose && hasValidData ? (diff / dayData.prevClose) * 100 : 0;
+              const isUp = diff > 0;
+              const isDown = diff < 0;
+
+              // Tooltip positioning logic
+              const row = Math.floor(index / 7);
+              const col = index % 7;
+              const isFirstRow = row === 0;
+              const isLastRow = row >= Math.floor(calendarDays.length / 7) - 1;
+              const isLeftEdge = col === 0;
+              const isRightEdge = col === 6;
+
+              return (
+                <motion.div
+                  key={d.toString()}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className={cn(
+                    "p-1 border-r border-b border-slate-100 transition-colors group relative",
+                    compact ? "min-h-[50px]" : "min-h-[120px] p-2",
+                    !dayData.isCurrentMonth && "bg-slate-50/10",
+                    isToday && "bg-blue-50/30"
+                  )}
+                >
+                  {dayData.isCurrentMonth && (
+                    <>
+                      <div className={cn("flex justify-between items-start", compact ? "mb-0" : "mb-2")}>
+                        <span className={cn(
+                          "font-semibold flex items-center justify-center rounded-full transition-colors",
+                          compact ? "text-[9px] w-3.5 h-3.5" : "text-sm w-7 h-7",
+                          isToday ? "bg-blue-600 text-white" : 
+                          d.getDay() === 0 ? "text-red-500" :
+                          d.getDay() === 6 ? "text-blue-500" : "text-slate-600"
+                        )}>
+                          {format(d, 'd')}
+                        </span>
+                      </div>
+
+                      {hasValidData ? (
+                        <div className={compact ? "flex justify-center items-center h-4" : "space-y-1"}>
+                          {!compact && (
+                            <div className="text-lg font-bold tracking-tight text-slate-800">
+                              {formatNumber(dayData.kospi!.close)}
+                            </div>
+                          )}
+                          <div className={cn(
+                            "flex items-center gap-0.5 font-bold",
+                            compact ? "text-[12px]" : "text-xs",
+                            isUp ? "text-red-500" : isDown ? "text-blue-500" : "text-slate-400"
+                          )}>
+                            {!compact && (isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />)}
+                            <span>{isUp ? '▲' : isDown ? '▼' : ''} {!compact && formatNumber(Math.abs(diff))}</span>
+                            {!compact && <span className="opacity-80">({formatNumber(diffPercent)}%)</span>}
+                          </div>
+                          
+                          {/* Dynamic Tooltip */}
+                          <div className={cn(
+                            "invisible group-hover:visible absolute z-20 w-48 p-3 bg-slate-900 text-white rounded-xl shadow-2xl pointer-events-none transition-all",
+                            compact ? "text-[10px]" : "text-xs",
+                            isFirstRow ? "top-full mt-2" : "bottom-full mb-2",
+                            isLeftEdge ? "left-0" : isRightEdge ? "right-0" : "left-1/2 -translate-x-1/2"
+                          )}>
+                            <div className="font-bold mb-2 pb-1 border-b border-slate-700 flex justify-between">
+                              <span>{format(d, 'yyyy.MM.dd')}</span>
+                              <span className={isUp ? "text-red-400" : isDown ? "text-blue-400" : ""}>
+                                {isUp ? '상승' : isDown ? '하락' : '보합'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-y-1">
+                              <span className="text-slate-400">시가</span>
+                              <span className="text-right">{formatNumber(dayData.kospi!.open)}</span>
+                              <span className="text-slate-400">고가</span>
+                              <span className="text-red-400 text-right font-medium">{formatNumber(dayData.kospi!.high)}</span>
+                              <span className="text-slate-400">저가</span>
+                              <span className="text-blue-400 text-right font-medium">{formatNumber(dayData.kospi!.low)}</span>
+                              <span className="text-slate-400">종가</span>
+                              <span className="text-right font-bold">{formatNumber(dayData.kospi!.close)}</span>
+                              <span className="text-slate-400">거래량</span>
+                              <span className="text-right">{formatNumber(dayData.kospi!.volume, 0)}</span>
+                            </div>
+                            {/* Tooltip Arrow */}
+                            <div className={cn(
+                              "absolute border-8 border-transparent",
+                              isFirstRow ? "bottom-full border-b-slate-900" : "top-full border-t-slate-900",
+                              isLeftEdge ? "left-4" : isRightEdge ? "right-4" : "left-1/2 -translate-x-1/2"
+                            )}></div>
+                          </div>
+                        </div>
+                      ) : !loading ? (
+                        <div className="h-full flex items-center justify-center">
+                          <span className={cn("text-slate-300 font-medium italic", compact ? "hidden" : "text-[10px]")}>No Data</span>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8">
@@ -180,7 +455,27 @@ export default function App() {
             <p className="text-slate-500 mt-1">야후 파이낸스 실시간 데이터를 기반으로 한 지수 변동 현황</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+              <button
+                onClick={() => setViewMode('year')}
+                className={cn(
+                  "px-4 py-1.5 rounded-lg text-sm font-bold transition-all",
+                  viewMode === 'year' ? "bg-blue-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
+                )}
+              >
+                Year
+              </button>
+              <button
+                onClick={() => setViewMode('month')}
+                className={cn(
+                  "px-4 py-1.5 rounded-lg text-sm font-bold transition-all",
+                  viewMode === 'month' ? "bg-blue-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
+                )}
+              >
+                Month
+              </button>
+            </div>
             <button 
               onClick={goToToday}
               className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl shadow-sm border border-slate-200 transition-all text-sm font-medium active:scale-95"
@@ -190,9 +485,9 @@ export default function App() {
             </button>
             <div className="flex items-center bg-white rounded-xl shadow-sm border border-slate-200 p-1 relative">
               <button 
-                onClick={prevMonth}
+                onClick={handlePrev}
                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                aria-label="Previous month"
+                aria-label="Previous"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -211,25 +506,27 @@ export default function App() {
                   {format(currentDate, 'yyyy년')}
                   <ChevronDown className={cn("w-4 h-4 transition-transform", showYearPicker && "rotate-180")} />
                 </button>
-                <button 
-                  onClick={() => {
-                    setShowMonthPicker(!showMonthPicker);
-                    setShowYearPicker(false);
-                  }}
-                  className={cn(
-                    "px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-lg",
-                    showMonthPicker && "bg-blue-50 text-blue-600"
-                  )}
-                >
-                  {format(currentDate, 'MM월')}
-                  <ChevronDown className={cn("w-4 h-4 transition-transform", showMonthPicker && "rotate-180")} />
-                </button>
+                {viewMode === 'month' && (
+                  <button 
+                    onClick={() => {
+                      setShowMonthPicker(!showMonthPicker);
+                      setShowYearPicker(false);
+                    }}
+                    className={cn(
+                      "px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-lg",
+                      showMonthPicker && "bg-blue-50 text-blue-600"
+                    )}
+                  >
+                    {format(currentDate, 'MM월')}
+                    <ChevronDown className={cn("w-4 h-4 transition-transform", showMonthPicker && "rotate-180")} />
+                  </button>
+                )}
               </div>
 
               <button 
-                onClick={nextMonth}
+                onClick={handleNext}
                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                aria-label="Next month"
+                aria-label="Next"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
@@ -287,10 +584,10 @@ export default function App() {
           </div>
         </header>
 
-        {/* Monthly Stats Summary */}
+        {/* Stats Summary */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">영업일수</p>
+            <p className="text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 영업일수</p>
             <p className="text-xl font-bold text-slate-900">{stats?.totalTradingDays ?? '-'}일</p>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -302,21 +599,21 @@ export default function App() {
             </div>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">월간 변동폭</p>
+            <p className="text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 변동폭</p>
             <div className={cn(
               "text-xl font-bold",
-              (stats?.monthlyChange ?? 0) > 0 ? "text-red-500" : (stats?.monthlyChange ?? 0) < 0 ? "text-blue-500" : "text-slate-900"
+              (stats?.totalChange ?? 0) > 0 ? "text-red-500" : (stats?.totalChange ?? 0) < 0 ? "text-blue-500" : "text-slate-900"
             )}>
-              {stats ? (stats.monthlyChange > 0 ? '+' : '') + formatNumber(stats.monthlyChange) : '-'}
+              {stats ? (stats.totalChange > 0 ? '+' : '') + formatNumber(stats.totalChange) : '-'}
             </div>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">월간 수익률</p>
+            <p className="text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 수익률</p>
             <div className={cn(
               "text-xl font-bold",
-              (stats?.monthlyChangePercent ?? 0) > 0 ? "text-red-500" : (stats?.monthlyChangePercent ?? 0) < 0 ? "text-blue-500" : "text-slate-900"
+              (stats?.totalChangePercent ?? 0) > 0 ? "text-red-500" : (stats?.totalChangePercent ?? 0) < 0 ? "text-blue-500" : "text-slate-900"
             )}>
-              {stats ? (stats.monthlyChangePercent > 0 ? '+' : '') + formatNumber(stats.monthlyChangePercent) + '%' : '-'}
+              {stats ? (stats.totalChangePercent > 0 ? '+' : '') + formatNumber(stats.totalChangePercent) + '%' : '-'}
             </div>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -330,9 +627,9 @@ export default function App() {
         </div>
 
         {/* Calendar Grid */}
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden relative">
+        <div className="relative">
           {loading && (
-            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center">
+            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
                 <p className="font-medium text-slate-600">데이터 로딩 중...</p>
@@ -341,10 +638,10 @@ export default function App() {
           )}
 
           {error && (
-            <div className="p-8 text-center">
+            <div className="bg-white p-8 text-center rounded-2xl border border-slate-200 shadow-xl">
               <p className="text-red-500 font-medium">{error}</p>
               <button 
-                onClick={() => fetchMonthData(currentDate)}
+                onClick={() => fetchData(currentDate, viewMode)}
                 className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 다시 시도
@@ -352,106 +649,15 @@ export default function App() {
             </div>
           )}
 
-          {/* Days of Week Header */}
-          <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
-            {daysOfWeek.map((day, idx) => (
-              <div 
-                key={day} 
-                className={cn(
-                  "py-3 text-center text-sm font-bold uppercase tracking-wider",
-                  idx === 0 ? "text-red-500" : idx === 6 ? "text-blue-500" : "text-slate-500"
-                )}
-              >
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar Days */}
-          <div className="grid grid-cols-7 auto-rows-fr">
-            <AnimatePresence mode="wait">
-              {calendarDays.map((date) => {
-                const dayData = getDayData(date);
-                const isToday = isSameDay(date, getKSTDate());
-                const diff = dayData.kospi && dayData.prevClose ? dayData.kospi.close - dayData.prevClose : 0;
-                const diffPercent = dayData.prevClose ? (diff / dayData.prevClose) * 100 : 0;
-                const isUp = diff > 0;
-                const isDown = diff < 0;
-
-                return (
-                  <motion.div
-                    key={date.toString()}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className={cn(
-                      "min-h-[120px] p-2 border-r border-b border-slate-100 transition-colors group relative",
-                      !dayData.isCurrentMonth && "bg-slate-50/10",
-                      isToday && "bg-blue-50/30"
-                    )}
-                  >
-                    {dayData.isCurrentMonth && (
-                      <>
-                        <div className="flex justify-between items-start mb-2">
-                          <span className={cn(
-                            "text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors",
-                            isToday ? "bg-blue-600 text-white" : 
-                            date.getDay() === 0 ? "text-red-500" :
-                            date.getDay() === 6 ? "text-blue-500" : "text-slate-600"
-                          )}>
-                            {format(date, 'd')}
-                          </span>
-                        </div>
-
-                        {dayData.kospi ? (
-                          <div className="space-y-1">
-                            <div className="text-lg font-bold tracking-tight text-slate-800">
-                              {formatNumber(dayData.kospi.close)}
-                            </div>
-                            <div className={cn(
-                              "flex items-center gap-1 text-xs font-bold",
-                              isUp ? "text-red-500" : isDown ? "text-blue-500" : "text-slate-400"
-                            )}>
-                              {isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-                              <span>{isUp ? '▲' : isDown ? '▼' : ''} {formatNumber(Math.abs(diff))}</span>
-                              <span className="opacity-80">({formatNumber(diffPercent)}%)</span>
-                            </div>
-                            
-                            {/* Tooltip */}
-                            <div className="invisible group-hover:visible absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-3 bg-slate-900 text-white rounded-xl shadow-2xl text-xs pointer-events-none">
-                              <div className="font-bold mb-2 pb-1 border-b border-slate-700 flex justify-between">
-                                <span>{format(date, 'yyyy.MM.dd')}</span>
-                                <span className={isUp ? "text-red-400" : isDown ? "text-blue-400" : ""}>
-                                  {isUp ? '상승' : isDown ? '하락' : '보합'}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-y-1">
-                                <span className="text-slate-400">시가</span>
-                                <span className="text-right">{formatNumber(dayData.kospi.open)}</span>
-                                <span className="text-slate-400">고가</span>
-                                <span className="text-red-400 text-right font-medium">{formatNumber(dayData.kospi.high)}</span>
-                                <span className="text-slate-400">저가</span>
-                                <span className="text-blue-400 text-right font-medium">{formatNumber(dayData.kospi.low)}</span>
-                                <span className="text-slate-400">종가</span>
-                                <span className="text-right font-bold">{formatNumber(dayData.kospi.close)}</span>
-                                <span className="text-slate-400">거래량</span>
-                                <span className="text-right">{formatNumber(dayData.kospi.volume, 0)}</span>
-                              </div>
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
-                            </div>
-                          </div>
-                        ) : !loading ? (
-                          <div className="h-full flex items-center justify-center">
-                            <span className="text-[10px] text-slate-300 font-medium italic">No Data</span>
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
+          {viewMode === 'month' ? (
+            <MonthCalendar date={currentDate} />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {months.map(m => (
+                <MonthCalendar key={m} date={setMonth(currentDate, m)} compact />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Footer Info */}
