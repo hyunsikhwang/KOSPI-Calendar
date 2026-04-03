@@ -1,7 +1,7 @@
 import React from 'react';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subMonths, addMonths, getUnixTime, startOfDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subMonths, addMonths, getUnixTime, startOfDay, setYear, setMonth, getYear, getMonth } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus, Loader2, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus, Loader2, Calendar, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
 import { KOSPIData, DayData } from './types';
@@ -12,6 +12,8 @@ export default function App() {
   const [kospiData, setKospiData] = React.useState<KOSPIData[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [showYearPicker, setShowYearPicker] = React.useState(false);
+  const [showMonthPicker, setShowMonthPicker] = React.useState(false);
 
   const fetchMonthData = React.useCallback(async (date: Date) => {
     setLoading(true);
@@ -37,7 +39,32 @@ export default function App() {
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
-  const goToToday = () => setCurrentDate(getKSTDate());
+  const goToToday = () => {
+    setCurrentDate(getKSTDate());
+    setShowYearPicker(false);
+    setShowMonthPicker(false);
+  };
+
+  const handleYearSelect = (year: number) => {
+    setCurrentDate(setYear(currentDate, year));
+    setShowYearPicker(false);
+  };
+
+  const handleMonthSelect = (month: number) => {
+    setCurrentDate(setMonth(currentDate, month));
+    setShowMonthPicker(false);
+  };
+
+  const years = React.useMemo(() => {
+    const currentYear = getYear(getKSTDate());
+    const range = [];
+    for (let i = 1997; i <= currentYear; i++) {
+      range.push(i);
+    }
+    return range.reverse();
+  }, []);
+
+  const months = Array.from({ length: 12 }, (_, i) => i);
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
@@ -83,32 +110,54 @@ export default function App() {
     let downDays = 0;
     let totalAbsChange = 0;
     let totalAbsPercentChange = 0;
+    let validTradingDaysCount = 0;
 
     currentMonthData.forEach(d => {
+      // Skip invalid data points where close is zero or missing
+      if (!d.close || d.close <= 0) return;
+
       const dataIndex = kospiData.findIndex(kd => kd.date === d.date);
       if (dataIndex > 0) {
         const prevClose = kospiData[dataIndex - 1].close;
+        // Skip if previous close is zero or missing to avoid division by zero
+        if (!prevClose || prevClose <= 0) return;
+
         const diff = d.close - prevClose;
         const diffPercent = (diff / prevClose) * 100;
+        
         if (diff > 0) upDays++;
         else if (diff < 0) downDays++;
+        
         totalAbsChange += Math.abs(diff);
         totalAbsPercentChange += Math.abs(diffPercent);
+        validTradingDaysCount++;
       }
     });
 
-    const firstDay = currentMonthData[0];
-    const lastDay = currentMonthData[currentMonthData.length - 1];
+    // Find first and last valid trading days of the month
+    const validMonthData = currentMonthData.filter(d => d.close && d.close > 0);
+    if (validMonthData.length === 0) return null;
+
+    const firstDay = validMonthData[0];
+    const lastDay = validMonthData[validMonthData.length - 1];
+    
     const firstDayIndex = kospiData.findIndex(kd => kd.date === firstDay.date);
+    // Use previous day's close if available, otherwise use open price of the first day
     const firstPrevClose = firstDayIndex > 0 ? kospiData[firstDayIndex - 1].close : firstDay.open;
 
-    const monthlyChange = lastDay.close - firstPrevClose;
-    const monthlyChangePercent = (monthlyChange / firstPrevClose) * 100;
-    const avgDailyChange = totalAbsChange / currentMonthData.length;
-    const avgDailyPercentChange = totalAbsPercentChange / currentMonthData.length;
+    let monthlyChange = 0;
+    let monthlyChangePercent = 0;
+    
+    if (firstPrevClose && firstPrevClose > 0) {
+      monthlyChange = lastDay.close - firstPrevClose;
+      monthlyChangePercent = (monthlyChange / firstPrevClose) * 100;
+    }
+
+    const avgDailyChange = validTradingDaysCount > 0 ? totalAbsChange / validTradingDaysCount : 0;
+    const avgDailyPercentChange = validTradingDaysCount > 0 ? totalAbsPercentChange / validTradingDaysCount : 0;
 
     return {
-      totalTradingDays: currentMonthData.length,
+      totalTradingDays: validMonthData.length,
       upDays,
       downDays,
       monthlyChange,
@@ -139,7 +188,7 @@ export default function App() {
               <Calendar className="w-4 h-4 text-blue-600" />
               오늘
             </button>
-            <div className="flex items-center bg-white rounded-xl shadow-sm border border-slate-200 p-1">
+            <div className="flex items-center bg-white rounded-xl shadow-sm border border-slate-200 p-1 relative">
               <button 
                 onClick={prevMonth}
                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
@@ -147,9 +196,36 @@ export default function App() {
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="px-4 font-semibold text-lg min-w-[140px] text-center">
-                {format(currentDate, 'yyyy년 MM월', { locale: ko })}
+              
+              <div className="flex items-center px-2 gap-1">
+                <button 
+                  onClick={() => {
+                    setShowYearPicker(!showYearPicker);
+                    setShowMonthPicker(false);
+                  }}
+                  className={cn(
+                    "px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-lg",
+                    showYearPicker && "bg-blue-50 text-blue-600"
+                  )}
+                >
+                  {format(currentDate, 'yyyy년')}
+                  <ChevronDown className={cn("w-4 h-4 transition-transform", showYearPicker && "rotate-180")} />
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowMonthPicker(!showMonthPicker);
+                    setShowYearPicker(false);
+                  }}
+                  className={cn(
+                    "px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-lg",
+                    showMonthPicker && "bg-blue-50 text-blue-600"
+                  )}
+                >
+                  {format(currentDate, 'MM월')}
+                  <ChevronDown className={cn("w-4 h-4 transition-transform", showMonthPicker && "rotate-180")} />
+                </button>
               </div>
+
               <button 
                 onClick={nextMonth}
                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
@@ -157,6 +233,56 @@ export default function App() {
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
+
+              {/* Year Picker Dropdown */}
+              <AnimatePresence>
+                {showYearPicker && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 grid grid-cols-3 gap-2 max-h-[300px] overflow-y-auto"
+                  >
+                    {years.map(year => (
+                      <button
+                        key={year}
+                        onClick={() => handleYearSelect(year)}
+                        className={cn(
+                          "py-2 rounded-lg text-sm font-medium transition-colors",
+                          getYear(currentDate) === year ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-600"
+                        )}
+                      >
+                        {year}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Month Picker Dropdown */}
+              <AnimatePresence>
+                {showMonthPicker && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 grid grid-cols-3 gap-2"
+                  >
+                    {months.map(m => (
+                      <button
+                        key={m}
+                        onClick={() => handleMonthSelect(m)}
+                        className={cn(
+                          "py-2 rounded-lg text-sm font-medium transition-colors",
+                          getMonth(currentDate) === m ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-600"
+                        )}
+                      >
+                        {m + 1}월
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </header>
@@ -259,7 +385,7 @@ export default function App() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     className={cn(
-                      "min-h-[120px] p-2 border-r border-b border-slate-100 transition-colors group",
+                      "min-h-[120px] p-2 border-r border-b border-slate-100 transition-colors group relative",
                       !dayData.isCurrentMonth && "bg-slate-50/10",
                       isToday && "bg-blue-50/30"
                     )}
@@ -290,8 +416,28 @@ export default function App() {
                               <span>{isUp ? '▲' : isDown ? '▼' : ''} {formatNumber(Math.abs(diff))}</span>
                               <span className="opacity-80">({formatNumber(diffPercent)}%)</span>
                             </div>
-                            <div className="hidden md:block text-[10px] text-slate-400 mt-1">
-                              H: {formatNumber(dayData.kospi.high, 1)} / L: {formatNumber(dayData.kospi.low, 1)}
+                            
+                            {/* Tooltip */}
+                            <div className="invisible group-hover:visible absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-3 bg-slate-900 text-white rounded-xl shadow-2xl text-xs pointer-events-none">
+                              <div className="font-bold mb-2 pb-1 border-b border-slate-700 flex justify-between">
+                                <span>{format(date, 'yyyy.MM.dd')}</span>
+                                <span className={isUp ? "text-red-400" : isDown ? "text-blue-400" : ""}>
+                                  {isUp ? '상승' : isDown ? '하락' : '보합'}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-y-1">
+                                <span className="text-slate-400">시가</span>
+                                <span className="text-right">{formatNumber(dayData.kospi.open)}</span>
+                                <span className="text-slate-400">고가</span>
+                                <span className="text-red-400 text-right font-medium">{formatNumber(dayData.kospi.high)}</span>
+                                <span className="text-slate-400">저가</span>
+                                <span className="text-blue-400 text-right font-medium">{formatNumber(dayData.kospi.low)}</span>
+                                <span className="text-slate-400">종가</span>
+                                <span className="text-right font-bold">{formatNumber(dayData.kospi.close)}</span>
+                                <span className="text-slate-400">거래량</span>
+                                <span className="text-right">{formatNumber(dayData.kospi.volume, 0)}</span>
+                              </div>
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
                             </div>
                           </div>
                         ) : !loading ? (
