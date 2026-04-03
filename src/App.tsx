@@ -82,15 +82,18 @@ export default function App() {
     let upDays = 0;
     let downDays = 0;
     let totalAbsChange = 0;
+    let totalAbsPercentChange = 0;
 
     currentMonthData.forEach(d => {
       const dataIndex = kospiData.findIndex(kd => kd.date === d.date);
       if (dataIndex > 0) {
         const prevClose = kospiData[dataIndex - 1].close;
         const diff = d.close - prevClose;
+        const diffPercent = (diff / prevClose) * 100;
         if (diff > 0) upDays++;
         else if (diff < 0) downDays++;
         totalAbsChange += Math.abs(diff);
+        totalAbsPercentChange += Math.abs(diffPercent);
       }
     });
 
@@ -102,6 +105,7 @@ export default function App() {
     const monthlyChange = lastDay.close - firstPrevClose;
     const monthlyChangePercent = (monthlyChange / firstPrevClose) * 100;
     const avgDailyChange = totalAbsChange / currentMonthData.length;
+    const avgDailyPercentChange = totalAbsPercentChange / currentMonthData.length;
 
     return {
       totalTradingDays: currentMonthData.length,
@@ -109,7 +113,8 @@ export default function App() {
       downDays,
       monthlyChange,
       monthlyChangePercent,
-      avgDailyChange
+      avgDailyChange,
+      avgDailyPercentChange
     };
   }, [currentMonthData, kospiData]);
 
@@ -157,7 +162,7 @@ export default function App() {
         </header>
 
         {/* Monthly Stats Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <p className="text-xs font-medium text-slate-500 mb-1">영업일수</p>
             <p className="text-xl font-bold text-slate-900">{stats?.totalTradingDays ?? '-'}일</p>
@@ -188,9 +193,13 @@ export default function App() {
               {stats ? (stats.monthlyChangePercent > 0 ? '+' : '') + formatNumber(stats.monthlyChangePercent) + '%' : '-'}
             </div>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 col-span-2 md:col-span-1">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <p className="text-xs font-medium text-slate-500 mb-1">일평균 변동폭</p>
             <p className="text-xl font-bold text-slate-900">{stats ? formatNumber(stats.avgDailyChange) : '-'}p</p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-xs font-medium text-slate-500 mb-1">일평균 변동률</p>
+            <p className="text-xl font-bold text-slate-900">{stats ? formatNumber(stats.avgDailyPercentChange) : '-'}%</p>
           </div>
         </div>
 
