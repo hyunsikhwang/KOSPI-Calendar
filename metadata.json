@@ -1,0 +1,5 @@
+{
+  "name": "KOSPI Calendar Explorer",
+  "description": "A calendar-based KOSPI index tracker showing daily market performance with visual indicators.",
+  "requestFramePermissions": []
+}
