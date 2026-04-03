@@ -251,44 +251,47 @@ export default function App() {
                     exit={{ opacity: 0 }}
                     className={cn(
                       "min-h-[120px] p-2 border-r border-b border-slate-100 transition-colors group",
-                      !dayData.isCurrentMonth && "bg-slate-50/30",
+                      !dayData.isCurrentMonth && "bg-slate-50/10",
                       isToday && "bg-blue-50/30"
                     )}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <span className={cn(
-                        "text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors",
-                        isToday ? "bg-blue-600 text-white" : 
-                        !dayData.isCurrentMonth ? "text-slate-300" :
-                        date.getDay() === 0 ? "text-red-500" :
-                        date.getDay() === 6 ? "text-blue-500" : "text-slate-600"
-                      )}>
-                        {format(date, 'd')}
-                      </span>
-                    </div>
+                    {dayData.isCurrentMonth && (
+                      <>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={cn(
+                            "text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full transition-colors",
+                            isToday ? "bg-blue-600 text-white" : 
+                            date.getDay() === 0 ? "text-red-500" :
+                            date.getDay() === 6 ? "text-blue-500" : "text-slate-600"
+                          )}>
+                            {format(date, 'd')}
+                          </span>
+                        </div>
 
-                    {dayData.kospi ? (
-                      <div className="space-y-1">
-                        <div className="text-lg font-bold tracking-tight text-slate-800">
-                          {formatNumber(dayData.kospi.close)}
-                        </div>
-                        <div className={cn(
-                          "flex items-center gap-1 text-xs font-bold",
-                          isUp ? "text-red-500" : isDown ? "text-blue-500" : "text-slate-400"
-                        )}>
-                          {isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-                          <span>{isUp ? '▲' : isDown ? '▼' : ''} {formatNumber(Math.abs(diff))}</span>
-                          <span className="opacity-80">({formatNumber(diffPercent)}%)</span>
-                        </div>
-                        <div className="hidden md:block text-[10px] text-slate-400 mt-1">
-                          H: {formatNumber(dayData.kospi.high, 1)} / L: {formatNumber(dayData.kospi.low, 1)}
-                        </div>
-                      </div>
-                    ) : dayData.isCurrentMonth && !loading ? (
-                      <div className="h-full flex items-center justify-center">
-                        <span className="text-[10px] text-slate-300 font-medium italic">No Data</span>
-                      </div>
-                    ) : null}
+                        {dayData.kospi ? (
+                          <div className="space-y-1">
+                            <div className="text-lg font-bold tracking-tight text-slate-800">
+                              {formatNumber(dayData.kospi.close)}
+                            </div>
+                            <div className={cn(
+                              "flex items-center gap-1 text-xs font-bold",
+                              isUp ? "text-red-500" : isDown ? "text-blue-500" : "text-slate-400"
+                            )}>
+                              {isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                              <span>{isUp ? '▲' : isDown ? '▼' : ''} {formatNumber(Math.abs(diff))}</span>
+                              <span className="opacity-80">({formatNumber(diffPercent)}%)</span>
+                            </div>
+                            <div className="hidden md:block text-[10px] text-slate-400 mt-1">
+                              H: {formatNumber(dayData.kospi.high, 1)} / L: {formatNumber(dayData.kospi.low, 1)}
+                            </div>
+                          </div>
+                        ) : !loading ? (
+                          <div className="h-full flex items-center justify-center">
+                            <span className="text-[10px] text-slate-300 font-medium italic">No Data</span>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </motion.div>
                 );
               })}
