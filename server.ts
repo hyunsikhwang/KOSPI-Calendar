@@ -31,17 +31,29 @@ async function startServer() {
 
       const timestamps = chartData.timestamp || [];
       const quotes = chartData.indicators.quote[0];
-      const adjClose = chartData.indicators.adjclose[0].adjclose;
+      const adjCloseArray = chartData.indicators.adjclose?.[0]?.adjclose || [];
 
-      const result = timestamps.map((ts: number, index: number) => ({
-        date: ts * 1000,
-        open: quotes.open[index],
-        high: quotes.high[index],
-        low: quotes.low[index],
-        close: quotes.close[index],
-        adjClose: adjClose[index],
-        volume: quotes.volume[index]
-      }));
+      const result = timestamps.map((ts: number, index: number) => {
+        const open = quotes.open[index];
+        const high = quotes.high[index];
+        const low = quotes.low[index];
+        const close = quotes.close[index];
+        const adjClose = adjCloseArray[index];
+        const volume = quotes.volume[index];
+
+        // Fallback to adjClose if close is null or 0
+        const finalClose = (close === null || close === 0) ? adjClose : close;
+
+        return {
+          date: ts * 1000,
+          open: open || finalClose, // Fallback open to close if missing
+          high: high || finalClose,
+          low: low || finalClose,
+          close: finalClose,
+          adjClose: adjClose,
+          volume: volume || 0
+        };
+      }).filter((item: any) => item.close !== null && item.close > 0);
 
       res.json(result);
     } catch (error: any) {
