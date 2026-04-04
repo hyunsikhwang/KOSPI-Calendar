@@ -1,7 +1,7 @@
 import React from 'react';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subMonths, addMonths, getUnixTime, startOfDay, setYear, setMonth, getYear, getMonth, addYears, subYears } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, subMonths, addMonths, getUnixTime, startOfDay, setYear, setMonth, getYear, getMonth, addYears, subYears, isAfter, isSameYear } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus, Loader2, Calendar, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus, Loader2, Calendar, ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
 import { KOSPIData, DayData } from './types';
@@ -47,10 +47,15 @@ export default function App() {
   }, [currentDate, viewMode, fetchData]);
 
   const handleNext = () => {
+    const today = getKSTDate();
     if (viewMode === 'month') {
-      setCurrentDate(addMonths(currentDate, 1));
+      const nextMonth = addMonths(currentDate, 1);
+      if (isAfter(startOfMonth(nextMonth), startOfMonth(today))) return;
+      setCurrentDate(nextMonth);
     } else {
-      setCurrentDate(addYears(currentDate, 1));
+      const nextYear = addYears(currentDate, 1);
+      if (getYear(nextYear) > getYear(today)) return;
+      setCurrentDate(nextYear);
     }
   };
 
@@ -61,6 +66,21 @@ export default function App() {
       setCurrentDate(subYears(currentDate, 1));
     }
   };
+
+  const isNextDisabled = React.useMemo(() => {
+    const today = getKSTDate();
+    if (viewMode === 'month') {
+      return isSameMonth(currentDate, today) || isAfter(currentDate, today);
+    } else {
+      return getYear(currentDate) >= getYear(today);
+    }
+  }, [currentDate, viewMode]);
+
+  const isNextYearDisabled = React.useMemo(() => {
+    const today = getKSTDate();
+    return getYear(currentDate) >= getYear(today);
+  }, [currentDate]);
+
   const goToToday = () => {
     setCurrentDate(getKSTDate());
     setShowYearPicker(false);
@@ -190,7 +210,9 @@ export default function App() {
     };
   }, [currentViewData, kospiData]);
 
-  const MonthCalendar = ({ date, compact = false }: { date: Date, compact?: boolean }) => {
+  const MonthCalendar = ({ date, compact = false }: { date: Date, compact?: boolean, key?: any }) => {
+    const [activeTooltip, setActiveTooltip] = React.useState<string | null>(null);
+
     const monthStart = startOfMonth(date);
     const monthEnd = endOfMonth(monthStart);
     const startDate = startOfWeek(monthStart);
@@ -286,27 +308,27 @@ export default function App() {
     };
 
     return (
-      <div className={cn("bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden relative", compact && "shadow-md")}>
+      <div className={cn("bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden relative", compact ? "shadow-md" : "shadow-lg")}>
         {compact && (
           <div className="bg-slate-50 border-b border-slate-100">
-            <div className="py-2 px-4 text-center font-bold text-slate-700 border-b border-slate-100">
+            <div className="py-2 px-4 text-center font-bold text-slate-700 border-b border-slate-100 text-sm md:text-base">
               {format(date, 'M월')}
             </div>
             {monthStats && (
-              <div className="grid grid-cols-3 gap-px bg-slate-100 text-[8px]">
+              <div className="grid grid-cols-3 gap-px bg-slate-100 text-[7px] md:text-[8px]">
                 <div className="bg-white p-1 text-center">
-                  <div className="text-slate-400">영업/상승/하락</div>
-                  <div className="font-bold">{monthStats.totalTradingDays} / <span className="text-red-500">{monthStats.upDays}</span> / <span className="text-blue-500">{monthStats.downDays}</span></div>
+                  <div className="text-slate-400 truncate">영업/상승/하락</div>
+                  <div className="font-bold truncate">{monthStats.totalTradingDays} / <span className="text-red-500">{monthStats.upDays}</span> / <span className="text-blue-500">{monthStats.downDays}</span></div>
                 </div>
                 <div className="bg-white p-1 text-center">
-                  <div className="text-slate-400">변동폭/수익률</div>
-                  <div className={cn("font-bold", monthStats.totalChange > 0 ? "text-red-500" : monthStats.totalChange < 0 ? "text-blue-500" : "")}>
-                    {formatNumber(monthStats.totalChange)} ({formatNumber(monthStats.totalChangePercent)}%)
+                  <div className="text-slate-400 truncate">변동폭/수익률</div>
+                  <div className={cn("font-bold truncate", monthStats.totalChange > 0 ? "text-red-500" : monthStats.totalChange < 0 ? "text-blue-500" : "")}>
+                    {formatNumber(monthStats.totalChange, 1)} ({formatNumber(monthStats.totalChangePercent, 1)}%)
                   </div>
                 </div>
                 <div className="bg-white p-1 text-center">
-                  <div className="text-slate-400">일평균 변동(p/%)</div>
-                  <div className="font-bold">{formatNumber(monthStats.avgDailyChange)} / {formatNumber(monthStats.avgDailyPercentChange)}%</div>
+                  <div className="text-slate-400 truncate">일평균 변동</div>
+                  <div className="font-bold truncate">{formatNumber(monthStats.avgDailyChange, 1)} / {formatNumber(monthStats.avgDailyPercentChange, 1)}%</div>
                 </div>
               </div>
             )}
@@ -319,7 +341,7 @@ export default function App() {
               key={day} 
               className={cn(
                 "text-center font-bold uppercase tracking-wider",
-                compact ? "py-1 text-[10px]" : "py-3 text-sm",
+                compact ? "py-1 text-[9px] md:text-[10px]" : "py-2 md:py-3 text-[10px] md:text-sm",
                 idx === 0 ? "text-red-500" : idx === 6 ? "text-blue-500" : "text-slate-500"
               )}
             >
@@ -355,19 +377,24 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
+                  onClick={() => {
+                    const dateStr = d.toISOString();
+                    setActiveTooltip(activeTooltip === dateStr ? null : dateStr);
+                  }}
                   className={cn(
-                    "p-1 border-r border-b border-slate-100 transition-colors group relative",
-                    compact ? "min-h-[50px]" : "min-h-[120px] p-2",
+                    "p-1 border-r border-b border-slate-100 transition-colors group relative cursor-pointer",
+                    compact ? "min-h-[45px] md:min-h-[50px]" : "min-h-[75px] md:min-h-[120px] md:p-2",
                     !dayData.isCurrentMonth && "bg-slate-50/10",
-                    isToday && "bg-blue-50/30"
+                    isToday && "bg-blue-50/30",
+                    activeTooltip === d.toISOString() && "bg-slate-100"
                   )}
                 >
                   {dayData.isCurrentMonth && (
                     <>
-                      <div className={cn("flex justify-between items-start", compact ? "mb-0" : "mb-2")}>
+                      <div className={cn("flex justify-between items-start", compact ? "mb-0" : "mb-1 md:mb-2")}>
                         <span className={cn(
                           "font-semibold flex items-center justify-center rounded-full transition-colors",
-                          compact ? "text-[9px] w-3.5 h-3.5" : "text-sm w-7 h-7",
+                          compact ? "text-[8px] md:text-[9px] w-3 h-3 md:w-3.5 md:h-3.5" : "text-[10px] md:text-sm w-5 h-5 md:w-7 md:h-7",
                           isToday ? "bg-blue-600 text-white" : 
                           d.getDay() === 0 ? "text-red-500" :
                           d.getDay() === 6 ? "text-blue-500" : "text-slate-600"
@@ -377,25 +404,26 @@ export default function App() {
                       </div>
 
                       {hasValidData ? (
-                        <div className={compact ? "flex justify-center items-center h-4" : "space-y-1"}>
+                        <div className={compact ? "flex justify-center items-center h-3 md:h-4" : "space-y-0.5 md:space-y-1"}>
                           {!compact && (
-                            <div className="text-lg font-bold tracking-tight text-slate-800">
-                              {formatNumber(dayData.kospi!.close)}
+                            <div className="hidden md:block text-[11px] md:text-lg font-bold tracking-tight text-slate-800">
+                              {formatNumber(dayData.kospi!.close, 1)}
                             </div>
                           )}
                           <div className={cn(
                             "flex items-center gap-0.5 font-bold",
-                            compact ? "text-[12px]" : "text-xs",
+                            compact ? "text-[10px] md:text-[12px]" : "text-[10px] md:text-xs justify-center md:justify-start flex-col md:flex-row",
                             isUp ? "text-red-500" : isDown ? "text-blue-500" : "text-slate-400"
                           )}>
-                            {isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-                            <span>{!compact && formatNumber(Math.abs(diff))}</span>
-                            {!compact && <span className="opacity-80">({formatNumber(diffPercent)}%)</span>}
+                            {isUp ? <TrendingUp className="w-2.5 h-2.5 md:w-3 md:h-3" /> : isDown ? <TrendingDown className="w-2.5 h-2.5 md:w-3 md:h-3" /> : <Minus className="w-2.5 h-2.5 md:w-3 md:h-3" />}
+                            <span className="truncate leading-none">{formatNumber(Math.abs(diff), 1)}</span>
+                            {!compact && <span className="opacity-80 hidden md:inline">({formatNumber(diffPercent, 1)}%)</span>}
                           </div>
                           
                           {/* Dynamic Tooltip */}
                           <div className={cn(
                             "invisible group-hover:visible absolute z-20 w-48 p-3 bg-slate-900 text-white rounded-xl shadow-2xl pointer-events-none transition-all",
+                            activeTooltip === d.toISOString() && "visible opacity-100",
                             compact ? "text-[10px]" : "text-xs",
                             isFirstRow ? "top-full mt-2" : "bottom-full mb-2",
                             isLeftEdge ? "left-0" : isRightEdge ? "right-0" : "left-1/2 -translate-x-1/2"
@@ -446,21 +474,21 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-              <span className="bg-blue-600 text-white p-1.json rounded">KOSPI</span>
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 md:mb-8 gap-4">
+          <div className="text-center lg:text-left">
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center justify-center lg:justify-start gap-2">
+              <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-xl md:text-2xl">KOSPI</span>
               지수 캘린더
             </h1>
-            <p className="text-slate-500 mt-1">야후 파이낸스 실시간 데이터를 기반으로 한 지수 변동 현황</p>
+            <p className="text-slate-500 mt-1 text-sm md:text-base">야후 파이낸스 실시간 데이터를 기반으로 한 지수 변동 현황</p>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
+            <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 w-full sm:w-auto">
               <button
                 onClick={() => setViewMode('year')}
                 className={cn(
-                  "px-4 py-1.5 rounded-lg text-sm font-bold transition-all",
+                  "flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-sm font-bold transition-all",
                   viewMode === 'year' ? "bg-blue-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
@@ -469,165 +497,222 @@ export default function App() {
               <button
                 onClick={() => setViewMode('month')}
                 className={cn(
-                  "px-4 py-1.5 rounded-lg text-sm font-bold transition-all",
+                  "flex-1 sm:flex-none px-4 py-1.5 rounded-lg text-sm font-bold transition-all",
                   viewMode === 'month' ? "bg-blue-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"
                 )}
               >
                 Month
               </button>
             </div>
-            <button 
-              onClick={goToToday}
-              className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl shadow-sm border border-slate-200 transition-all text-sm font-medium active:scale-95"
-            >
-              <Calendar className="w-4 h-4 text-blue-600" />
-              오늘
-            </button>
-            <div className="flex items-center bg-white rounded-xl shadow-sm border border-slate-200 p-1 relative">
+            
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
               <button 
-                onClick={handlePrev}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                aria-label="Previous"
+                onClick={goToToday}
+                className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl shadow-sm border border-slate-200 transition-all text-sm font-medium active:scale-95"
               >
-                <ChevronLeft className="w-5 h-5" />
+                <Calendar className="w-4 h-4 text-blue-600" />
+                오늘
               </button>
-              
-              <div className="flex items-center px-2 gap-1">
+              <div className="flex items-center bg-white rounded-xl shadow-sm border border-slate-200 p-1 relative">
                 <button 
-                  onClick={() => {
-                    setShowYearPicker(!showYearPicker);
-                    setShowMonthPicker(false);
-                  }}
-                  className={cn(
-                    "px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-lg",
-                    showYearPicker && "bg-blue-50 text-blue-600"
-                  )}
+                  onClick={handlePrev}
+                  className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                  aria-label="Previous"
                 >
-                  {format(currentDate, 'yyyy년')}
-                  <ChevronDown className={cn("w-4 h-4 transition-transform", showYearPicker && "rotate-180")} />
+                  <ChevronLeft className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
-                {viewMode === 'month' && (
-                  <button 
-                    onClick={() => {
-                      setShowMonthPicker(!showMonthPicker);
-                      setShowYearPicker(false);
-                    }}
-                    className={cn(
-                      "px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-lg",
-                      showMonthPicker && "bg-blue-50 text-blue-600"
-                    )}
-                  >
-                    {format(currentDate, 'MM월')}
-                    <ChevronDown className={cn("w-4 h-4 transition-transform", showMonthPicker && "rotate-180")} />
-                  </button>
-                )}
+                
+                <div className="flex items-center px-1 md:px-2 gap-1">
+                  <div className="relative">
+                    <button 
+                      onClick={() => {
+                        setShowYearPicker(!showYearPicker);
+                        setShowMonthPicker(false);
+                      }}
+                      className={cn(
+                        "px-1.5 md:px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-base md:text-lg",
+                        showYearPicker && "bg-blue-50 text-blue-600"
+                      )}
+                    >
+                      {format(currentDate, 'yyyy년')}
+                      <ChevronDown className={cn("w-3 h-3 md:w-4 md:h-4 transition-transform", showYearPicker && "rotate-180")} />
+                    </button>
+                    
+                    {/* Year Picker Dropdown */}
+                    <AnimatePresence>
+                      {showYearPicker && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="absolute top-full left-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto"
+                        >
+                          {years.map(year => {
+                            const isFuture = year > getYear(getKSTDate());
+                            return (
+                              <button
+                                key={year}
+                                onClick={() => !isFuture && handleYearSelect(year)}
+                                disabled={isFuture}
+                                className={cn(
+                                  "py-2 rounded-lg text-sm font-medium transition-colors",
+                                  getYear(currentDate) === year ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-600",
+                                  isFuture && "opacity-30 cursor-not-allowed grayscale"
+                                )}
+                              >
+                                {year}
+                              </button>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {viewMode === 'month' && (
+                    <div className="relative">
+                      <button 
+                        onClick={() => {
+                          setShowMonthPicker(!showMonthPicker);
+                          setShowYearPicker(false);
+                        }}
+                        className={cn(
+                          "px-1.5 md:px-2 py-1 rounded-md hover:bg-slate-100 transition-colors flex items-center gap-1 font-semibold text-base md:text-lg",
+                          showMonthPicker && "bg-blue-50 text-blue-600"
+                        )}
+                      >
+                        {format(currentDate, 'MM월')}
+                        <ChevronDown className={cn("w-3 h-3 md:w-4 md:h-4 transition-transform", showMonthPicker && "rotate-180")} />
+                      </button>
+
+                      {/* Month Picker Dropdown */}
+                      <AnimatePresence>
+                        {showMonthPicker && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="absolute top-full left-0 mt-2 w-40 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 grid grid-cols-2 gap-2"
+                          >
+                            {months.map(m => {
+                              const today = getKSTDate();
+                              const isFuture = isAfter(startOfMonth(setMonth(currentDate, m)), startOfMonth(today));
+                              return (
+                                <button
+                                  key={m}
+                                  onClick={() => !isFuture && handleMonthSelect(m)}
+                                  disabled={isFuture}
+                                  className={cn(
+                                    "py-2 rounded-lg text-sm font-medium transition-colors",
+                                    getMonth(currentDate) === m ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-600",
+                                    isFuture && "opacity-30 cursor-not-allowed grayscale"
+                                  )}
+                                >
+                                  {m + 1}월
+                                </button>
+                              );
+                            })}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={handleNext}
+                  disabled={isNextDisabled}
+                  className={cn(
+                    "p-1.5 md:p-2 hover:bg-slate-100 rounded-lg transition-colors",
+                    isNextDisabled && "opacity-30 cursor-not-allowed"
+                  )}
+                  aria-label="Next"
+                >
+                  <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
+                </button>
               </div>
-
-              <button 
-                onClick={handleNext}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                aria-label="Next"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-
-              {/* Year Picker Dropdown */}
-              <AnimatePresence>
-                {showYearPicker && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 grid grid-cols-3 gap-2 max-h-[300px] overflow-y-auto"
-                  >
-                    {years.map(year => (
-                      <button
-                        key={year}
-                        onClick={() => handleYearSelect(year)}
-                        className={cn(
-                          "py-2 rounded-lg text-sm font-medium transition-colors",
-                          getYear(currentDate) === year ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-600"
-                        )}
-                      >
-                        {year}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Month Picker Dropdown */}
-              <AnimatePresence>
-                {showMonthPicker && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-4 grid grid-cols-3 gap-2"
-                  >
-                    {months.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => handleMonthSelect(m)}
-                        className={cn(
-                          "py-2 rounded-lg text-sm font-medium transition-colors",
-                          getMonth(currentDate) === m ? "bg-blue-600 text-white" : "hover:bg-slate-100 text-slate-600"
-                        )}
-                      >
-                        {m + 1}월
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           </div>
         </header>
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 영업일수</p>
-            <p className="text-xl font-bold text-slate-900">{stats?.totalTradingDays ?? '-'}일</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 mb-6 md:mb-8">
+          <div className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-[10px] md:text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 영업일수</p>
+            <p className="text-lg md:text-xl font-bold text-slate-900">{stats?.totalTradingDays ?? '-'}일</p>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">상승 / 하락</p>
+          <div className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-[10px] md:text-xs font-medium text-slate-500 mb-1">상승 / 하락</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold text-red-500">{stats?.upDays ?? '-'}</span>
+              <span className="text-lg md:text-xl font-bold text-red-500">{stats?.upDays ?? '-'}</span>
               <span className="text-slate-300">/</span>
-              <span className="text-xl font-bold text-blue-500">{stats?.downDays ?? '-'}</span>
+              <span className="text-lg md:text-xl font-bold text-blue-500">{stats?.downDays ?? '-'}</span>
             </div>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 변동폭</p>
+          <div className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-[10px] md:text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 변동폭</p>
             <div className={cn(
-              "text-xl font-bold",
+              "text-lg md:text-xl font-bold",
               (stats?.totalChange ?? 0) > 0 ? "text-red-500" : (stats?.totalChange ?? 0) < 0 ? "text-blue-500" : "text-slate-900"
             )}>
-              {stats ? (stats.totalChange > 0 ? '+' : '') + formatNumber(stats.totalChange) : '-'}
+              {stats ? (stats.totalChange > 0 ? '+' : '') + formatNumber(stats.totalChange, 1) : '-'}
             </div>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 수익률</p>
+          <div className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-[10px] md:text-xs font-medium text-slate-500 mb-1">{viewMode === 'month' ? '월간' : '연간'} 수익률</p>
             <div className={cn(
-              "text-xl font-bold",
+              "text-lg md:text-xl font-bold",
               (stats?.totalChangePercent ?? 0) > 0 ? "text-red-500" : (stats?.totalChangePercent ?? 0) < 0 ? "text-blue-500" : "text-slate-900"
             )}>
-              {stats ? (stats.totalChangePercent > 0 ? '+' : '') + formatNumber(stats.totalChangePercent) + '%' : '-'}
+              {stats ? (stats.totalChangePercent > 0 ? '+' : '') + formatNumber(stats.totalChangePercent, 1) + '%' : '-'}
             </div>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">일평균 변동폭</p>
-            <p className="text-xl font-bold text-slate-900">{stats ? formatNumber(stats.avgDailyChange) : '-'}p</p>
+          <div className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-[10px] md:text-xs font-medium text-slate-500 mb-1">일평균 변동폭</p>
+            <p className="text-lg md:text-xl font-bold text-slate-900">{stats ? formatNumber(stats.avgDailyChange, 1) : '-'}p</p>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <p className="text-xs font-medium text-slate-500 mb-1">일평균 변동률</p>
-            <p className="text-xl font-bold text-slate-900">{stats ? formatNumber(stats.avgDailyPercentChange) : '-'}%</p>
+          <div className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-slate-200">
+            <p className="text-[10px] md:text-xs font-medium text-slate-500 mb-1">일평균 변동률</p>
+            <p className="text-lg md:text-xl font-bold text-slate-900">{stats ? formatNumber(stats.avgDailyPercentChange, 1) : '-'}%</p>
           </div>
         </div>
 
         {/* Calendar Grid */}
-        <div className="relative">
+        <motion.div 
+          className="relative"
+          style={{ touchAction: 'none' }}
+          onPanEnd={(_event, info) => {
+            const threshold = 50;
+            const { offset } = info;
+            const today = getKSTDate();
+            
+            if (Math.abs(offset.x) > Math.abs(offset.y)) {
+              // Horizontal swipe
+              if (offset.x > threshold) {
+                // Swipe Right -> Previous Month
+                setCurrentDate(prev => subMonths(prev, 1));
+              } else if (offset.x < -threshold) {
+                // Swipe Left -> Next Month
+                const nextMonth = addMonths(currentDate, 1);
+                if (!isAfter(startOfMonth(nextMonth), startOfMonth(today))) {
+                  setCurrentDate(nextMonth);
+                }
+              }
+            } else {
+              // Vertical swipe
+              if (offset.y > threshold) {
+                // Swipe Down -> Previous Year
+                setCurrentDate(prev => subYears(prev, 1));
+              } else if (offset.y < -threshold) {
+                // Swipe Up -> Next Year
+                const nextYear = addYears(currentDate, 1);
+                if (getYear(nextYear) <= getYear(today)) {
+                  setCurrentDate(nextYear);
+                }
+              }
+            }
+          }}
+        >
           {loading && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl">
               <div className="flex flex-col items-center gap-3">
@@ -650,15 +735,34 @@ export default function App() {
           )}
 
           {viewMode === 'month' ? (
-            <MonthCalendar date={currentDate} />
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentDate.toISOString()}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <MonthCalendar date={currentDate} />
+              </motion.div>
+            </AnimatePresence>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {months.map(m => (
-                <MonthCalendar key={m} date={setMonth(currentDate, m)} compact />
-              ))}
-            </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={getYear(currentDate)}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              >
+                {months.map(m => (
+                  <MonthCalendar key={m} date={setMonth(currentDate, m)} compact />
+                ))}
+              </motion.div>
+            </AnimatePresence>
           )}
-        </div>
+        </motion.div>
 
         {/* Footer Info */}
         <footer className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -680,6 +784,73 @@ export default function App() {
             데이터 출처: Yahoo Finance (^KS11) • 기준 시간: 한국 표준시 (KST)
           </div>
         </footer>
+
+        {/* Mobile Floating Navigation Bar */}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 md:hidden">
+          <div className="bg-white/90 backdrop-blur-md border border-slate-200 shadow-2xl rounded-2xl p-2 flex items-center gap-1">
+            <button 
+              onClick={() => setCurrentDate(prev => subYears(prev, 1))}
+              className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors text-slate-600 active:scale-90"
+              aria-label="Previous Year"
+            >
+              <ChevronsLeft className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => setCurrentDate(prev => subMonths(prev, 1))}
+              className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors text-slate-600 active:scale-90"
+              aria-label="Previous Month"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+            
+            <button 
+              onClick={goToToday}
+              className="p-2.5 hover:bg-blue-50 text-blue-600 rounded-xl transition-colors active:scale-95"
+              aria-label="Today"
+            >
+              <Calendar className="w-5 h-5" />
+            </button>
+            
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+
+            <button 
+              onClick={() => {
+                const nextMonth = addMonths(currentDate, 1);
+                const today = getKSTDate();
+                if (!isAfter(startOfMonth(nextMonth), startOfMonth(today))) {
+                  setCurrentDate(nextMonth);
+                }
+              }}
+              disabled={isNextDisabled}
+              className={cn(
+                "p-2.5 hover:bg-slate-100 rounded-xl transition-colors text-slate-600 active:scale-90",
+                isNextDisabled && "opacity-30 cursor-not-allowed"
+              )}
+              aria-label="Next Month"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={() => {
+                const nextYear = addYears(currentDate, 1);
+                const today = getKSTDate();
+                if (getYear(nextYear) <= getYear(today)) {
+                  setCurrentDate(nextYear);
+                }
+              }}
+              disabled={isNextYearDisabled}
+              className={cn(
+                "p-2.5 hover:bg-slate-100 rounded-xl transition-colors text-slate-600 active:scale-90",
+                isNextYearDisabled && "opacity-30 cursor-not-allowed"
+              )}
+              aria-label="Next Year"
+            >
+              <ChevronsRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
