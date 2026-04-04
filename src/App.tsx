@@ -388,8 +388,8 @@ export default function App() {
                             compact ? "text-[12px]" : "text-xs",
                             isUp ? "text-red-500" : isDown ? "text-blue-500" : "text-slate-400"
                           )}>
-                            {!compact && (isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />)}
-                            <span>{isUp ? '▲' : isDown ? '▼' : ''} {!compact && formatNumber(Math.abs(diff))}</span>
+                            {isUp ? <TrendingUp className="w-3 h-3" /> : isDown ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                            <span>{!compact && formatNumber(Math.abs(diff))}</span>
                             {!compact && <span className="opacity-80">({formatNumber(diffPercent)}%)</span>}
                           </div>
                           
