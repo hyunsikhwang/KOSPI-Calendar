@@ -7,16 +7,28 @@ import axios from 'axios';
 import { KOSPIData, DayData } from './types';
 import { cn, formatNumber, getKSTDate } from './lib/utils';
 
+const INDICES = [
+  { name: 'KOSPI', symbol: '^KS11', region: 'KR' },
+  { name: 'KOSPI 200', symbol: '^KS200', region: 'KR' },
+  { name: 'S&P 500', symbol: '^GSPC', region: 'US' },
+  { name: 'Nasdaq', symbol: '^IXIC', region: 'US' },
+  { name: 'Dow Jones', symbol: '^DJI', region: 'US' },
+  { name: 'Nikkei 225', symbol: '^N225', region: 'JP' },
+  { name: 'Hang Seng', symbol: '^HSI', region: 'HK' },
+];
+
 export default function App() {
   const [currentDate, setCurrentDate] = React.useState(getKSTDate());
   const [viewMode, setViewMode] = React.useState<'month' | 'year'>('month');
+  const [selectedIndex, setSelectedIndex] = React.useState(INDICES[0]);
   const [kospiData, setKospiData] = React.useState<KOSPIData[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [showYearPicker, setShowYearPicker] = React.useState(false);
   const [showMonthPicker, setShowMonthPicker] = React.useState(false);
+  const [showIndexPicker, setShowIndexPicker] = React.useState(false);
 
-  const fetchData = React.useCallback(async (date: Date, mode: 'month' | 'year') => {
+  const fetchData = React.useCallback(async (date: Date, mode: 'month' | 'year', indexSymbol: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -32,7 +44,7 @@ export default function App() {
         end = getUnixTime(endOfMonth(setMonth(setYear(date, getYear(date)), 11)));
       }
       
-      const response = await axios.get<KOSPIData[]>(`/api/kospi?start=${start}&end=${end}`);
+      const response = await axios.get<KOSPIData[]>(`/api/index-data?start=${start}&end=${end}&symbol=${encodeURIComponent(indexSymbol)}`);
       setKospiData(response.data);
     } catch (err) {
       setError('데이터를 불러오는 중 오류가 발생했습니다.');
@@ -43,8 +55,8 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
-    fetchData(currentDate, viewMode);
-  }, [currentDate, viewMode, fetchData]);
+    fetchData(currentDate, viewMode, selectedIndex.symbol);
+  }, [currentDate, viewMode, selectedIndex.symbol, fetchData]);
 
   const handleNext = () => {
     const today = getKSTDate();
@@ -476,11 +488,46 @@ export default function App() {
         {/* Header */}
         <header className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 md:mb-8 gap-4">
           <div className="text-center lg:text-left">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex items-center justify-center lg:justify-start gap-2">
-              <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-xl md:text-2xl">KOSPI</span>
-              지수 캘린더
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-2">
+              <div className="relative group">
+                <button 
+                  onClick={() => setShowIndexPicker(!showIndexPicker)}
+                  className="bg-blue-600 text-white px-3 py-1 rounded inline-flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
+                >
+                  <span className="text-xl md:text-2xl">{selectedIndex.name}</span>
+                  <ChevronDown className={cn("w-4 h-4 transition-transform", showIndexPicker && "rotate-180")} />
+                </button>
+                
+                <AnimatePresence>
+                  {showIndexPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute top-full left-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-2 overflow-hidden"
+                    >
+                      {INDICES.map(idx => (
+                        <button
+                          key={idx.symbol}
+                          onClick={() => {
+                            setSelectedIndex(idx);
+                            setShowIndexPicker(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-between",
+                            selectedIndex.symbol === idx.symbol ? "bg-blue-50 text-blue-600" : "hover:bg-slate-50 text-slate-700"
+                          )}
+                        >
+                          <span>{idx.name}</span>
+                          <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">{idx.region}</span>
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <span>지수 캘린더</span>
             </h1>
-            <p className="text-slate-500 mt-1 text-sm md:text-base">야후 파이낸스 실시간 데이터를 기반으로 한 지수 변동 현황</p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
@@ -680,7 +727,7 @@ export default function App() {
         {/* Calendar Grid */}
         <motion.div 
           className="relative"
-          style={{ touchAction: 'none' }}
+          style={{ touchAction: viewMode === 'month' ? 'none' : 'pan-y' }}
           onPanEnd={(_event, info) => {
             const threshold = 50;
             const { offset } = info;
@@ -689,17 +736,28 @@ export default function App() {
             if (Math.abs(offset.x) > Math.abs(offset.y)) {
               // Horizontal swipe
               if (offset.x > threshold) {
-                // Swipe Right -> Previous Month
-                setCurrentDate(prev => subMonths(prev, 1));
+                // Swipe Right -> Previous
+                if (viewMode === 'month') {
+                  setCurrentDate(prev => subMonths(prev, 1));
+                } else {
+                  setCurrentDate(prev => subYears(prev, 1));
+                }
               } else if (offset.x < -threshold) {
-                // Swipe Left -> Next Month
-                const nextMonth = addMonths(currentDate, 1);
-                if (!isAfter(startOfMonth(nextMonth), startOfMonth(today))) {
-                  setCurrentDate(nextMonth);
+                // Swipe Left -> Next
+                if (viewMode === 'month') {
+                  const nextMonth = addMonths(currentDate, 1);
+                  if (!isAfter(startOfMonth(nextMonth), startOfMonth(today))) {
+                    setCurrentDate(nextMonth);
+                  }
+                } else {
+                  const nextYear = addYears(currentDate, 1);
+                  if (getYear(nextYear) <= getYear(today)) {
+                    setCurrentDate(nextYear);
+                  }
                 }
               }
-            } else {
-              // Vertical swipe
+            } else if (viewMode === 'month') {
+              // Vertical swipe - Only in Month mode to avoid scroll conflict in Year mode
               if (offset.y > threshold) {
                 // Swipe Down -> Previous Year
                 setCurrentDate(prev => subYears(prev, 1));
@@ -726,7 +784,7 @@ export default function App() {
             <div className="bg-white p-8 text-center rounded-2xl border border-slate-200 shadow-xl">
               <p className="text-red-500 font-medium">{error}</p>
               <button 
-                onClick={() => fetchData(currentDate, viewMode)}
+                onClick={() => fetchData(currentDate, viewMode, selectedIndex.symbol)}
                 className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 다시 시도
@@ -781,7 +839,7 @@ export default function App() {
             </div>
           </div>
           <div className="text-center md:text-right">
-            데이터 출처: Yahoo Finance (^KS11) • 기준 시간: 한국 표준시 (KST)
+            데이터 출처: Yahoo Finance ({selectedIndex.symbol}) • 기준 시간: 한국 표준시 (KST)
           </div>
         </footer>
 
