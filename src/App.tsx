@@ -58,6 +58,60 @@ export default function App() {
     fetchData(currentDate, viewMode, selectedIndex.symbol);
   }, [currentDate, viewMode, selectedIndex.symbol, fetchData]);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore key events if the user is in an input field (just in case they are somewhere like search indices, etc.)
+      const target = e.target as HTMLElement;
+      if (
+        target?.tagName === 'INPUT' || 
+        target?.tagName === 'TEXTAREA' || 
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      const today = getKSTDate();
+
+      switch (e.key) {
+        case 'ArrowLeft': {
+          e.preventDefault();
+          setCurrentDate(prev => subMonths(prev, 1));
+          break;
+        }
+        case 'ArrowRight': {
+          e.preventDefault();
+          setCurrentDate(prev => {
+            const nextMonth = addMonths(prev, 1);
+            if (isAfter(startOfMonth(nextMonth), startOfMonth(today))) return prev;
+            return nextMonth;
+          });
+          break;
+        }
+        case 'ArrowUp': {
+          e.preventDefault();
+          setCurrentDate(prev => subYears(prev, 1));
+          break;
+        }
+        case 'ArrowDown': {
+          e.preventDefault();
+          setCurrentDate(prev => {
+            const nextYear = addYears(prev, 1);
+            if (getYear(nextYear) > getYear(today)) return prev;
+            return nextYear;
+          });
+          break;
+        }
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const handleNext = () => {
     const today = getKSTDate();
     if (viewMode === 'month') {
