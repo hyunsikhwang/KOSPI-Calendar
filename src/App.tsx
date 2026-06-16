@@ -13,6 +13,7 @@ const INDICES = [
   { name: 'S&P 500', symbol: '^GSPC', region: 'US' },
   { name: 'Nasdaq', symbol: '^IXIC', region: 'US' },
   { name: 'Dow Jones', symbol: '^DJI', region: 'US' },
+  { name: 'Russell 2000', symbol: '^RUT', region: 'US' },
   { name: 'Nikkei 225', symbol: '^N225', region: 'JP' },
   { name: 'Hang Seng', symbol: '^HSI', region: 'HK' },
 ];
@@ -185,8 +186,17 @@ export default function App() {
   });
 
   const getDayData = (date: Date): DayData => {
-    const dayStart = startOfDay(date).getTime();
-    const data = kospiData.find(d => startOfDay(new Date(d.date)).getTime() === dayStart);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const targetDateStr = `${yyyy}-${mm}-${dd}`;
+
+    const data = kospiData.find(d => {
+      if (d.dateStr) {
+        return d.dateStr === targetDateStr;
+      }
+      return startOfDay(new Date(d.date)).getTime() === startOfDay(date).getTime();
+    });
     
     // Find previous trading day's close
     let prevClose: number | undefined;
@@ -209,10 +219,22 @@ export default function App() {
 
   const currentViewData = React.useMemo(() => {
     if (viewMode === 'month') {
-      return kospiData.filter(d => isSameMonth(new Date(d.date), currentDate));
+      return kospiData.filter(d => {
+        if (d.dateStr) {
+          const [yr, mo] = d.dateStr.split('-');
+          return parseInt(yr) === currentDate.getFullYear() && parseInt(mo) === (currentDate.getMonth() + 1);
+        }
+        return isSameMonth(new Date(d.date), currentDate);
+      });
     } else {
       const year = getYear(currentDate);
-      return kospiData.filter(d => getYear(new Date(d.date)) === year);
+      return kospiData.filter(d => {
+        if (d.dateStr) {
+          const [yr] = d.dateStr.split('-');
+          return parseInt(yr) === year;
+        }
+        return getYear(new Date(d.date)) === year;
+      });
     }
   }, [kospiData, currentDate, viewMode]);
 
@@ -290,10 +312,17 @@ export default function App() {
     });
 
     const monthData = React.useMemo(() => {
-      return kospiData.filter(d => isSameMonth(new Date(d.date), date));
-    }, [date]);
+      return kospiData.filter(d => {
+        if (d.dateStr) {
+          const [yr, mo] = d.dateStr.split('-');
+          return parseInt(yr) === date.getFullYear() && parseInt(mo) === (date.getMonth() + 1);
+        }
+        return isSameMonth(new Date(d.date), date);
+      });
+    }, [date, kospiData]);
 
     const monthStats = React.useMemo(() => {
+      // stats calculation code...
       if (monthData.length === 0) return null;
 
       let upDays = 0;
@@ -351,11 +380,20 @@ export default function App() {
         avgDailyChange,
         avgDailyPercentChange
       };
-    }, [monthData]);
+    }, [monthData, kospiData]);
 
     const getDayData = (d: Date): DayData => {
-      const dayStart = startOfDay(d).getTime();
-      const data = kospiData.find(kd => startOfDay(new Date(kd.date)).getTime() === dayStart);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const targetDateStr = `${yyyy}-${mm}-${dd}`;
+
+      const data = kospiData.find(kd => {
+        if (kd.dateStr) {
+          return kd.dateStr === targetDateStr;
+        }
+        return startOfDay(new Date(kd.date)).getTime() === startOfDay(d).getTime();
+      });
       
       let prevClose: number | undefined;
       if (data) {

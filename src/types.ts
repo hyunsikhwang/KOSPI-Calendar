@@ -1,5 +1,6 @@
 export interface KOSPIData {
   date: number;
+  dateStr?: string;
   open: number;
   high: number;
   low: number;
