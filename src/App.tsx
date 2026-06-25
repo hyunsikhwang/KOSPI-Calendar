@@ -298,6 +298,49 @@ export default function App() {
     };
   }, [currentViewData, kospiData]);
 
+  const weekdayStats = React.useMemo(() => {
+    const statsMap: Record<number, { up: number; down: number; flat: number; total: number }> = {
+      1: { up: 0, down: 0, flat: 0, total: 0 },
+      2: { up: 0, down: 0, flat: 0, total: 0 },
+      3: { up: 0, down: 0, flat: 0, total: 0 },
+      4: { up: 0, down: 0, flat: 0, total: 0 },
+      5: { up: 0, down: 0, flat: 0, total: 0 },
+    };
+
+    currentViewData.forEach(d => {
+      if (!d.close || d.close <= 0) return;
+
+      const dataIndex = kospiData.findIndex(kd => kd.date === d.date);
+      if (dataIndex > 0) {
+        const prevClose = kospiData[dataIndex - 1].close;
+        if (!prevClose || prevClose <= 0) return;
+
+        const diff = d.close - prevClose;
+        
+        let dayOfWeek = 0;
+        if (d.dateStr) {
+          const [yr, mo, dy] = d.dateStr.split('-').map(Number);
+          dayOfWeek = new Date(yr, mo - 1, dy).getDay();
+        } else {
+          dayOfWeek = new Date(d.date).getDay();
+        }
+
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+          statsMap[dayOfWeek].total++;
+          if (diff > 0) {
+            statsMap[dayOfWeek].up++;
+          } else if (diff < 0) {
+            statsMap[dayOfWeek].down++;
+          } else {
+            statsMap[dayOfWeek].flat++;
+          }
+        }
+      }
+    });
+
+    return statsMap;
+  }, [currentViewData, kospiData]);
+
   const MonthCalendar = ({ date, compact = false }: { date: Date, compact?: boolean, key?: any }) => {
     const [activeTooltip, setActiveTooltip] = React.useState<string | null>(null);
 
@@ -913,6 +956,122 @@ export default function App() {
             </AnimatePresence>
           )}
         </motion.div>
+
+        {/* Day of the Week Stats Card */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mt-6 md:mt-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-3 border-b border-slate-100 gap-2">
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center gap-1.5">
+                <span className="w-1 h-4 bg-blue-600 rounded-full"></span>
+                요일별 상승 / 하락 분석
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {viewMode === 'month' 
+                  ? `${format(currentDate, 'yyyy년 MM월')} 기준`
+                  : `${format(currentDate, 'yyyy년')} 기준`
+                } 각 요일의 영업일 중 전일 대비 등락 빈도와 비율입니다.
+              </p>
+            </div>
+            <span className="text-[10px] md:text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg self-start sm:self-center">
+              영업일수 {stats?.totalTradingDays ?? 0}일 기준
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+            {[1, 2, 3, 4, 5].map(dayNum => {
+              const dayNames = { 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일' };
+              const dayStats = weekdayStats[dayNum] || { up: 0, down: 0, flat: 0, total: 0 };
+              
+              const total = dayStats.total;
+              const upPercent = total > 0 ? (dayStats.up / total) * 100 : 0;
+              const downPercent = total > 0 ? (dayStats.down / total) * 100 : 0;
+              const flatPercent = total > 0 ? (dayStats.flat / total) * 100 : 0;
+
+              return (
+                <div 
+                  key={dayNum} 
+                  className={cn(
+                    "p-3 rounded-xl border border-slate-100 bg-slate-50/50 flex flex-col justify-between transition-all hover:shadow-md hover:border-slate-200",
+                    total === 0 && "opacity-60"
+                  )}
+                >
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-bold text-sm text-slate-700">{dayNames[dayNum as 1|2|3|4|5]}</span>
+                      <span className="text-[10px] text-slate-400 font-medium">총 {total}회</span>
+                    </div>
+
+                    {total > 0 ? (
+                      <div className="space-y-2">
+                        {/* Stacked bar visualization */}
+                        <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden flex">
+                          {dayStats.up > 0 && (
+                            <div 
+                              style={{ width: `${upPercent}%` }} 
+                              className="bg-red-500 h-full"
+                              title={`상승: ${upPercent.toFixed(1)}%`}
+                            ></div>
+                          )}
+                          {dayStats.flat > 0 && (
+                            <div 
+                              style={{ width: `${flatPercent}%` }} 
+                              className="bg-slate-300 h-full"
+                              title={`보합: ${flatPercent.toFixed(1)}%`}
+                            ></div>
+                          )}
+                          {dayStats.down > 0 && (
+                            <div 
+                              style={{ width: `${downPercent}%` }} 
+                              className="bg-blue-500 h-full"
+                              title={`하락: ${downPercent.toFixed(1)}%`}
+                            ></div>
+                          )}
+                        </div>
+
+                        {/* Breakdown */}
+                        <div className="text-xs space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="text-red-500 font-medium flex items-center gap-1 text-[11px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                              상승
+                            </span>
+                            <span className="font-bold text-slate-700 text-[11px]">
+                              {dayStats.up}회 <span className="text-slate-400 font-normal">({upPercent.toFixed(1)}%)</span>
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-blue-500 font-medium flex items-center gap-1 text-[11px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                              하락
+                            </span>
+                            <span className="font-bold text-slate-700 text-[11px]">
+                              {dayStats.down}회 <span className="text-slate-400 font-normal">({downPercent.toFixed(1)}%)</span>
+                            </span>
+                          </div>
+                          {dayStats.flat > 0 && (
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="text-slate-400 font-medium flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                                보합
+                              </span>
+                              <span className="font-medium text-slate-500">
+                                {dayStats.flat}회 <span className="text-slate-400 font-normal">({flatPercent.toFixed(1)}%)</span>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 text-xs italic text-slate-400 font-medium">
+                        영업 데이터 없음
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Footer Info */}
         <footer className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
