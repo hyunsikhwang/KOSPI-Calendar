@@ -9,6 +9,7 @@ import { cn, formatNumber, getKSTDate } from './lib/utils';
 
 const INDICES = [
   { name: 'KOSPI', symbol: '^KS11', region: 'KR' },
+  { name: 'KOSDAQ', symbol: '^KQ11', region: 'KR' },
   { name: 'KOSPI 200', symbol: '^KS200', region: 'KR' },
   { name: 'S&P 500', symbol: '^GSPC', region: 'US' },
   { name: 'Nasdaq', symbol: '^IXIC', region: 'US' },

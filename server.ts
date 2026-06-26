@@ -18,9 +18,9 @@ async function startServer() {
     const symbolStr = symbol as string;
 
     // Utilize Naver Finance fchart API as the primary feed for Korean indices
-    if (symbolStr === "^KS11" || symbolStr === "^KS200") {
+    if (symbolStr === "^KS11" || symbolStr === "^KS200" || symbolStr === "^KQ11") {
       try {
-        const naverSymbol = symbolStr === "^KS11" ? "KOSPI" : "KPI200";
+        const naverSymbol = symbolStr === "^KS11" ? "KOSPI" : (symbolStr === "^KS200" ? "KPI200" : "KOSDAQ");
         const count = 2000; // Covers multiple years of trading days
         const url = `https://fchart.stock.naver.com/sise.nhn?symbol=${naverSymbol}&timeframe=day&count=${count}&requestType=0`;
         
@@ -88,6 +88,7 @@ async function startServer() {
       const timezoneMap: Record<string, string> = {
         '^KS11': 'Asia/Seoul',
         '^KS200': 'Asia/Seoul',
+        '^KQ11': 'Asia/Seoul',
         '^GSPC': 'America/New_York',
         '^IXIC': 'America/New_York',
         '^DJI': 'America/New_York',
