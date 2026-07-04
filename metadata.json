@@ -1,5 +1,5 @@
 {
-  "name": "KOSPI Calendar Explorer",
-  "description": "A calendar-based KOSPI index tracker showing daily market performance with visual indicators.",
+  "name": "Stock Calendar Explorer",
+  "description": "A calendar-based stock market index tracker showing daily market performance with visual indicators.",
   "requestFramePermissions": []
 }
